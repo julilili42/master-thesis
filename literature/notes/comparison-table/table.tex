@@ -1,0 +1,711 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+\usepackage[margin=18mm]{geometry}
+\usepackage{booktabs,tabularx,array}
+\usepackage[hidelinks]{hyperref}
+
+\setlength{\parindent}{0pt}
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.15}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\newcommand{\finding}[1]{\textbf{#1}\par\smallskip}
+% Trenner zwischen Papern. Umbruch vorziehen, wenn weniger als zehn Zeilen frei sind (needspace-Trick ohne Paket).
+% Linie, Abstand und Titel bleiben zusammen: \@nobreaktrue lässt \section* keinen eigenen Umbruchpunkt setzen.
+% Die Linie ist Leaders-Glue, damit sie am Seitenanfang wegfällt und nur zwischen zwei Papern auf einer Seite erscheint.
+\makeatletter
+\newcommand{\papersep}{\par\vskip\z@\@plus 10\baselineskip\penalty-100\vskip\z@\@plus -10\baselineskip
+  \vspace{4ex}\leaders\hrule height 0.4pt\vskip 0.4pt\nobreak\vspace{3.5ex}\@nobreaktrue}
+\makeatother
+
+\begin{document}
+
+% Layout inspired by Downloads/IMG_0500.HEIC.
+\begin{table}[!t]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}LL@{}}
+\toprule
+\textbf{In-kernel} & \textbf{Kernel bypass / userspace} \\
+\midrule
+eBPF kernel programs \cite{xdp2018,freitas2022,tu2021}\newline
+\hspace*{1em}XDP (native/generic) \cite{xdp2018,tu2021}\newline
+\hspace*{1em}SK\_MSG \cite{middlenet2023}\newline
+Linux network stack \cite{xdp2018,tu2021,ara2020}\newline
+\hspace*{1em}AF\_PACKET sockets \cite{valia2026}
+&
+DPDK \cite{gallenmueller2015,metronome2023,valia2026,tu2021,ara2020}\newline
+Snabb \cite{ara2020}\newline
+PF\_RING ZC \cite{gallenmueller2015}\newline
+netmap \cite{gallenmueller2015}\newline
+AF\_XDP \cite{mole2025,edge2023,valia2026,tu2021}\newline
+uXDP over DPDK/AF\_XDP \cite{uxdp2025}\newline
+VPP over DPDK \cite{ara2020} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{table}[!t]
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.05}
+% Spaltenbreiten: Paper schmal, Comparison basis breit, Summe der Faktoren bleibt 5.
+\begin{tabularx}{\textwidth}{@{}>{\hsize=.7\hsize}L>{\hsize=1.0\hsize}L>{\hsize=1.05\hsize}L>{\hsize=.95\hsize}L>{\hsize=1.3\hsize}L@{}}
+\toprule
+\textbf{Paper} & \textbf{Approaches} & \textbf{Workload} &
+\textbf{Metrics} & \textbf{Comparison basis} \\
+\midrule
+Packet IO (2015) \cite{gallenmueller2015} &
+DPDK, netmap, PF\_RING ZC &
+Forwarding, fixed CPU cost, random accesses to 1--512~MB working sets &
+Packet rate, cycles/packet, batch/cache effects, latency at 99\% line rate &
+Same CPU, 10-Gbit NICs and forwarding algorithm. \\
+
+AF\_XDP / OpenNIC (2025) \cite{mole2025} &
+Mixed-mode AF\_XDP zero-copy, DPDK on OpenNIC &
+Packet drop and L2 MAC-swap forwarding &
+Rate vs.\ packet size and queue count &
+Same FPGA, different drivers and benchmark tools. \\
+
+XDP (2018) \cite{xdp2018} &
+Native XDP, DPDK \texttt{testpmd}, Linux stack &
+64-byte drop and MAC-swap forwarding, core scaling &
+Rate vs.\ cores, CPU use vs.\ load, forwarding latency &
+Same testbed. RSS selects cores. Linux stack only in drop/CPU tests. \\
+
+Linux survey (2022) \cite{freitas2022} &
+Hardware, software, virtualisation &
+Offload, RDMA, GPU, zero-copy, bypass, XDP, virtual NICs &
+Resource efficiency, packet rate, security, flexibility &
+Literature review, no shared benchmark/testbed. \\
+
+uXDP (2025) \cite{uxdp2025} &
+Native/generic XDP, userspace eBPF via DPDK/AF\_XDP &
+Counters, filtering, load balancing, Katran, MAC-swap echo (\texttt{xdp\_tx}) &
+NF throughput, unloaded RTT, compiler/inlining effects &
+Same programs/hardware, one core. Mode comparison: optimised source LLVM IR. \\
+
+Metronome (2023) \cite{metronome2023} &
+DPDK busy polling, adaptive sleep/wake, native XDP &
+L3 \texttt{l3fwd}, load changes, concurrent CPU workloads &
+Rate, loss, CPU use, latency vs.\ sleep interval, power &
+DPDK/Metronome: same \texttt{l3fwd}. Different thread/core allocations. \\
+
+MiddleNet (2023) \cite{middlenet2023} &
+DPDK (PMD, RTE\_RING), AF\_XDP, eBPF SK\_MSG, SR-IOV &
+L3 routing, L2 forwarding, HTTP proxy, URL rewrite, chain scaling &
+MLFR, CPU and latency at MLFR, HTTP request rate/latency, copy and interrupt overhead &
+Same workloads/testbed. Five 60-s L2/L3 runs. Data paths and CPU budgets differ. \\
+
+Edge data centers (2023) \cite{edge2023} &
+Native XDP, AF\_XDP (busy loop, syscall, \texttt{poll()}), XDP with AF\_XDP sockets &
+Drop, transit, local traffic, CPU/memory scaling, firewall, load balancer, memcached &
+Throughput, CPU by execution context, LLC hits/misses &
+40-Gbit testbed, usually one core. 10 runs (mean/SD). Drop/transit loss below 0.1\%. \\
+
+UPF I/O modes (2026) \cite{valia2026} &
+AF\_PACKET, AF\_XDP zero-copy, CNDP, DPDK PMD as port drivers of one BESS-UPF &
+5G UPF pipeline (GTP-U, PDR/FAR/QER), 64--1518~B, 1--8 workers, 24-h soak &
+Non-drop rate (RFC~2544), in-pipeline latency percentiles, per-core rate, worker scaling &
+Same host, NIC, kernel and UPF image, only the port driver changes. Different generators per mode. AF\_XDP/CNDP capped at two workers. \\
+
+OVS dataplane (2021) \cite{tu2021} &
+OVS kernel module, OVS-DPDK, OVS-AF\_XDP, eBPF/XDP variants &
+NSX rule set with TCP, 64-byte P2P/PVP/PCP forwarding, \texttt{netperf} RR, 1--6 queues &
+TCP Gbps, lossless Mpps, CPU by context, P50/P90/P99 latency &
+Same switch and testbed, I/O backend swapped. Kernel path uses RSS over all cores, userspace paths pinned PMD threads. \\
+
+Inter-container bypass (2020) \cite{ara2020} &
+Linux bridge/sockets, DPDK basicfwd, OVS-DPDK, VPP, Snabb, SR-IOV &
+Container pairs on one or two hosts, 64--1500~B, bursts 4--256, 1--8 pairs &
+Max receive rate, total throughput vs.\ pairs, mean round-trip latency &
+Same hosts and benchmark apps (\texttt{nfv-testperf}), polling, fixed CPU clock. Switching logic differs per switch. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\null % Keep both tables at the top instead of centring them on a float-only page.
+\clearpage
+
+\begingroup
+\small
+\section*{\large\normalfont Comparison of Frameworks for High-Performance Packet IO~\cite{gallenmueller2015}}
+\finding{DPDK and PF\_RING ZC outperform netmap, and the CPU cycles available per packet bound throughput.}
+DPDK and PF\_RING ZC process packets in user space using zero-copy.
+The Linux stack handles packets in kernel space with security and robustness checks.
+netmap combines userspace processing with kernel buffer checks and packet transfer through system calls.
+DPDK and PF\_RING ZC outperform netmap in most tested forwarding scenarios.
+Available CPU cycles limit throughput.
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{CPU cycles per packet.}
+More cycles per packet reduce throughput (Figure~2a).
+$C_{\mathrm{task}}$ is the application's processing cost per packet.
+
+\item \emph{Cache size vs.\ throughput.}
+Throughput drops and cache misses rise when the working set reaches the CPU's 4~MB L3 cache (Figures~3a and~3b).
+
+\item \emph{Batch size, throughput and latency.}
+Packets per NIC batch affect throughput and CPU cycles.
+Larger batches increase queueing delay.
+Very small batches sharply reduce throughput.
+netmap needs large batches for high throughput.
+Latency is measured at 99\% of line rate.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Simulated task $C_{\mathrm{task}}$.}
+Fixed CPU cycles per packet simulate application work.
+\item \emph{Memory access.}
+One random memory access per packet, with 1--512~MB working sets.
+\end{itemize}
+
+\par
+\endgroup
+
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont Performance Implications at the Intersection of AF\_XDP and Programmable NICs~\cite{mole2025}}
+\finding{DPDK beats mixed-mode AF\_XDP only for 64-byte packets, while both perform nearly equally for larger packets.}
+The OpenNIC driver adds eBPF/XDP loading and AF\_XDP zero-copy.
+Without driver support, AF\_XDP uses copy mode.
+Focus: splitting AF\_XDP functionality across the FPGA, driver and kernel.
+
+\subsection*{\normalsize\normalfont Processing paths and motivation}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Native XDP.}
+XDP runs in the kernel's NIC driver.
+Packets cross PCIe into host memory before XDP processes them.
+High packet rates can exhaust host CPU capacity.
+\item \emph{NIC offloading.}
+NIC-side filtering or processing can reduce host CPU work.
+Programmable hardware and hardware development are costly.
+AF\_XDP hardware features consume FPGA resources otherwise available to application logic.
+\item \emph{Studied hardware/kernel split.}
+Kernel eBPF selects the receiving AF\_XDP socket.
+Software redirection reduces hardware flow-steering requirements but adds host processing.
+Further parameters: TX NAPI budget and NAPI placement on CPU cores.
+\end{itemize}
+
+AF\_XDP mixed mode shares the NIC between bypass applications and traditional Linux sockets.
+Exclusive DPDK deployments assign the NIC to one application.
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Throughput vs.\ packet size.}
+Small packets require higher packet rates at the same data rate.
+DPDK outperforms mixed-mode AF\_XDP (XSK) for 64-byte packets.
+AF\_XDP and DPDK perform nearly equally for larger packets (Figures~7 and~8).
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Packet drop.}
+Receive and drop packets.
+\item \emph{L2 swap and forward.}
+Swap source/destination MAC addresses and forward.
+\end{itemize}
+
+\par
+\endgroup
+
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont The eXpress Data Path: Fast Programmable Packet Processing in the Operating System Kernel~\cite{xdp2018}}
+\finding{XDP drops about five times more packets per core than the Linux stack with load-proportional CPU use, while DPDK stays faster at 100\,\% CPU.}
+XDP executes eBPF in the receive path before the Linux network stack.
+General-purpose stacks prioritise flexibility over per-packet cost.
+XDP reduces this overhead while preserving application isolation and kernel security.
+DPDK remains faster in some tested scenarios.
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item Cooperates with the regular network stack.
+\item Remains transparent to host applications.
+\item CPU usage scales with load without exclusively reserved cores.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Packet drop rate vs.\ number of cores.}
+Minimal drop processing measures system overhead and gives an upper bound on application throughput (Figure~3).
+DPDK and XDP scale approximately linearly with the number of cores until they approach the PCI bus limit.
+Single-core XDP achieves about five times the drop rate of the Linux stack in raw mode.
+
+\item \emph{CPU usage vs.\ offered packet load.}
+Single-core drop test (Figure~4): DPDK busy polling uses 100\% CPU.
+XDP and Linux CPU usage scale with offered load.
+
+\item \emph{Packet forwarding throughput and latency.}
+Throughput vs.\ core count (Figure~5).
+Latency at low and high packet rates (Table~1).
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Minimum-sized packets.}
+64-byte packets maximise packet rate at a given line rate.
+\item \emph{Packet drop.}
+Receive and drop without application processing.
+\item \emph{L2 swap and forward.}
+Swap source/destination MAC addresses and forward.
+Minimal rewriting gives an upper bound on forwarding throughput.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+Same testbed and basic packet tasks.
+DPDK uses \texttt{testpmd}.
+Hardware Receive Side Scaling (RSS) steers XDP/Linux traffic to the selected cores.
+The Linux stack appears in drop and CPU tests.
+Minimal forwarding excludes it because it requires bridging or routing lookups.
+\par
+\endgroup
+
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont A survey on accelerating technologies for fast network packet processing in Linux environments~\cite{freitas2022}}
+\finding{Survey that classifies accelerators by resource use, packet rate, security and flexibility, without a common benchmark or performance ranking.}
+Taxonomy of Linux packet-processing bottlenecks and accelerators: hardware, software and virtualisation (Figure~2).
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Host resource usage and packet rate.}
+Published CPU usage and packet rates.
+Continuous polling trades CPU occupation at low load for higher throughput.
+\item \emph{Security and flexibility.}
+Kernel isolation, programmability, hardware dependencies and expandability.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Hardware acceleration.}
+TCP offload engines, programmable NICs, RDMA and GPU packet processing.
+\item \emph{Software acceleration.}
+Zero-copy, kernel bypass, in-kernel processing and userspace TCP.
+Examples: netmap, DPDK, PF\_RING ZC and XDP/eBPF (in-kernel).
+\item \emph{Virtualised networking.}
+NIC passthrough, SR-IOV, VirtIO/VHost and userspace processing (VPP).
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+Literature synthesis without a common benchmark or testbed.
+The survey's Table~2 maps studies to the four criteria.
+Supports technology selection, with no overall performance ranking.
+\par
+\endgroup
+
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont uXDP: Frictionless XDP Deployments in Userspace~\cite{uxdp2025}}
+\finding{DPDK-mode uXDP is fastest, up to $3.3\times$ in-kernel XDP, but the figures mix I/O-path and compiler effects.}
+uXDP runs unchanged XDP/eBPF programs in userspace via DPDK or AF\_XDP.
+It extends \texttt{bpftime}, retaining eBPF verification and existing control-plane compatibility.
+Optimisations: helper/map inlining and SIMD instructions.
+DPDK mode avoids interrupt-based retrieval and enables execution where kernel eBPF is unavailable.
+
+\subsection*{\normalsize\normalfont Deployment modes}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{DPDK mode.}
+Userspace RX/TX rings and packet processing bypass the kernel network stack.
+Kernel-bound traffic requires reinjection.
+\item \emph{AF\_XDP mode.}
+Kernel XDP redirects packets to an AF\_XDP socket for userspace eBPF processing.
+Shared RX/TX rings and packet buffers avoid per-packet copies in zero-copy mode.
+\end{itemize}
+
+In AF\_XDP mode, kernel XDP can pass selected packets directly to the Linux stack before userspace processing.
+After uXDP processing, the evaluated version supports only \texttt{XDP\_DROP} and \texttt{XDP\_TX}.
+Kernel reinjection for \texttt{XDP\_PASS} is future work (Section~7).
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Throughput across deployment modes.}
+Modes in Figure~4: DPDK (\texttt{dpdk\_llvm}), AF\_XDP (\texttt{afxdp\_llvm}), native XDP (\texttt{drv\_mode}), generic XDP (\texttt{skb\_mode}).
+Up to $3.3\times$ throughput over in-kernel execution and up to 40\% higher throughput for Meta's Katran.
+DPDK mode is fastest across tested functions.
+AF\_XDP mode can exceed native XDP for complex functions.
+Generic XDP is slowest.
+
+\item \emph{Unloaded round-trip latency.}
+\texttt{xdp\_tx} MAC-swap RTT (Figure~5): DPDK mode has the lowest latency, AF\_XDP mode slightly higher latency than native XDP.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{XDP network functions.}
+Packet counters, packet-length statistics, filtering, simple load balancing and Katran, with different helper/map combinations.
+\item \emph{MAC swap and transmit.}
+\texttt{xdp\_tx}: swap source/destination MAC addresses and transmit back (latency benchmark).
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+Same programs and testbed, one CPU core.
+64-byte TCP or 128-byte ICMP packets.
+Existing eBPF binaries run without recompilation.
+Figure~4 uses optimised source LLVM IR: results combine deployment-mode and compiler effects.
+\par
+\endgroup
+\newpage
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont Metronome: Adaptive and Precise Intermittent Packet Retrieval in DPDK~\cite{metronome2023}}
+\finding{Adaptive sleep/wake keeps DPDK's throughput and loss while trading CPU time and power against buffering latency.}
+DPDK busy polling occupies reserved cores at 100\% even at low traffic, consuming CPU time and power.
+Metronome adapts sleep/wake intervals to packet load.
+Alternating threads release CPU time for other applications.
+Like XDP, it targets load-proportional CPU utilisation.
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Latency and CPU usage vs.\ sleep interval.}
+Target sleep interval varied at 5 and 10~Gbps (Figure~5).
+Longer sleep intervals reduce CPU usage but increase packet buffering delay.
+Adaptive tuning targets a configurable latency as load changes.
+
+\item \emph{Latency vs.\ number of threads.}
+More threads sharing a receive queue can increase latency and variance through coordination and longer sleep periods (Figures~7 and~8).
+
+\item \emph{Power consumption.}
+Sleeping can reduce polling power costs.
+Savings depend on traffic load and CPU power governor.
+
+\item \emph{Throughput and packet loss.}
+Tuned Metronome achieves comparable throughput and no substantial packet-loss difference from standard DPDK.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{L3 forwarding.}
+DPDK \texttt{l3fwd} with changing traffic rates.
+\item \emph{CPU sharing.}
+CPU-intensive applications run alongside packet I/O to use released CPU time.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+DPDK/Metronome: same forwarding application and hardware.
+Metronome typically uses three threads, DPDK one polling thread per receive queue.
+Native XDP comparison: \texttt{xdp\_router\_ipv4} (Section~V-D).
+Core counts and frame sizes differ in that comparison.
+\par
+\endgroup
+
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont MiddleNet: A Unified, High-Performance NFV and Middlebox Framework With eBPF and DPDK~\cite{middlenet2023}}
+\finding{DPDK paths win for small packets and event-driven eBPF paths use less CPU for large ones, but the comparison covers whole architectures rather than isolated I/O paths.}
+MiddleNet combines L2/L3 network functions and L4/L7 middleboxes on one host.
+L2/L3 uses DPDK kernel bypass for zero-copy delivery and high packet rates.
+L4/L7 combines event-driven eBPF with the kernel protocol stack.
+SR-IOV allows both paths to coexist.
+
+\smallskip
+Separate NFV/middlebox platforms can place functions on different nodes.
+Service function chaining (SFC) transfers can add interrupts, copies, context switches, protocol processing and serialization/deserialization.
+Overhead grows with chain length and can reduce throughput.
+MiddleNet stores packet data in shared memory and passes descriptors between functions on the same host, avoiding repeated payload copies.
+
+\subsection*{\normalsize\normalfont Shared-memory communication}
+NIC access: DPDK PMD or AF\_XDP.
+Descriptor transfer between functions: RTE\_RING or SK\_MSG.
+L4/L7 uses sockets and a userspace message broker with the kernel protocol stack.
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Event-driven eBPF.}
+Negligible overhead without events.
+Programs have size limits and must run to completion.
+Interrupts and context switches limit performance at high packet rates.
+\item \emph{Polling-based DPDK.}
+PMD and RTE\_RING avoid interrupts for retrieval and descriptor transfer.
+Continuous polling occupies CPU cores.
+This path provides zero-copy, interrupt-free chaining.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Packet rate, CPU usage and latency.}
+Maximum loss-free rate (MLFR), CPU utilisation and end-to-end latency at MLFR vs.\ packet size (Figure~7).
+DPDK performs better for small packets.
+Event-driven variants use less CPU for larger packets.
+\item \emph{Application performance.}
+HTTP requests/s, response latency and CPU usage vs.\ client concurrency (Figure~10).
+\item \emph{Communication overhead.}
+Data copies, interrupts and context switches along the chain.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{L2/L3 chain.}
+L3 routing followed by L2 forwarding updates IP/MAC addresses.
+DPDK: PMD and RTE\_RING.
+eBPF: SK\_MSG with AF\_XDP polling or interrupts.
+\item \emph{L4/L7 chain.}
+HTTP reverse-proxy load balancing followed by URL rewriting.
+Chain length and compute demand varied separately.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+Same testbed and comparable chains, with OVS and kernel-bridge baselines.
+L2/L3: mean of five 60-second runs.
+Results compare complete architectures with different data paths, communication mechanisms and CPU budgets.
+\par
+\endgroup
+
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont Comparing User Space and In-Kernel Packet Processing for Edge Data Centers~\cite{edge2023}}
+\finding{Native XDP wins for cache-resident dropping and syscall-driven AF\_XDP for forwarding and memory-heavy processing, with latency left unmeasured.}
+Native XDP vs.\ zero-copy AF\_XDP on edge servers sharing resources with applications.
+Kernel-provided XDP and AF\_XDP, no custom modules.
+AF\_XDP modes: busy loop, syscall-triggered driver polling and \texttt{poll()}.
+Additional modes: XDP processing with AF\_XDP sockets enabled.
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Throughput.}
+RFC2544-based input-rate adjustment until drop/transit loss is below 0.1\%.
+XDP performs well for cache-resident dropping.
+Syscall-driven AF\_XDP benefits forwarding and memory-intensive processing.
+\item \emph{CPU usage.}
+Userspace, system-call and software-interrupt CPU usage.
+\item \emph{Cache and memory behaviour.}
+LLC load/store hits and misses vs.\ working set and processing cost.
+Latency evaluation is left to future work.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Traffic classes.}
+Drop, pass-through to remote destinations, local delivery through the kernel stack.
+\item \emph{Processing and memory demand.}
+Minimal MAC swap isolates packet I/O overhead.
+Repeated checksums add CPU work.
+Random accesses to growing arrays add memory demand.
+\item \emph{Application examples.}
+Firewall, load balancer, local memcached and mixed traffic.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+Same 40-Gbps testbed, usually one CPU core.
+Ten repetitions, mean and standard deviation.
+Results depend on traffic class, memory demand and driver scheduling mode.
+\par
+\endgroup
+
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont Comparing UPF Dataplane I/O Modes in a Cloud-Native 5G Core: AF\_PACKET, AF\_XDP, CNDP, and DPDK on SD-Core BESS-UPF~\cite{valia2026}}
+\finding{At two workers AF\_XDP, CNDP and DPDK are within measurement noise and AF\_XDP leads per core, DPDK's lead is a scaling-ceiling effect, and AF\_PACKET is an order of magnitude slower.}
+One open-source 5G user plane function (SD-Core BESS-UPF) runs under four I/O modes.
+Only the BESS port driver changes: AF\_PACKET and AF\_XDP through DPDK poll-mode drivers, CNDP through its own port type, DPDK through a native PMD over \texttt{vfio-pci}.
+Deployment requirements, operational pitfalls and a decision guide are reported next to the measurements (Sections~3, 7 and~9).
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Throughput.}
+Non-drop rate per RFC~2544 over 64--1518~B (Figure~18, Tables~3 and~4).
+At 64~B: CNDP 5.52 and AF\_XDP 6.47~Mpps with two workers, DPDK 10.30~Mpps with four and 13.09~Mpps with eight; AF\_PACKET 0.25~Mpps at 86~B.
+\item \emph{Latency and jitter.}
+In-pipeline probes give mean, P50, P99 and P99.9 (Table~5): DPDK 8.1~\textmu s mean, CNDP and AF\_XDP 13--14~\textmu s.
+A second AF\_XDP worker adds P99 jitter through contention on the kernel redirect path (Table~6).
+\item \emph{CPU and core scaling.}
+Per-core rate and scaling efficiency (Table~7): AF\_XDP 3.69, DPDK 2.99, CNDP 2.65~Mpps per core.
+A per-netdev AF\_XDP socket limit pins CNDP and AF\_XDP at two workers.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{UPF pipeline.}
+GTP-U decapsulation, PDR lookup, QER metering and FAR action with a single rule set.
+\item \emph{Synthetic and real traffic.}
+\texttt{testpmd} and kernel \texttt{pktgen} for I/O ceilings; a 24-hour soak and a real-RAN run validate CNDP only.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+Same host, NIC (Intel XXV710), real-time kernel, Kubernetes cluster and UPF image; the port driver is the only variable (Table~2).
+Caveats: a different load generator per mode, traffic hairpinned inside the NIC because of 1-GbE optics, a NIC receive path that caps every mode near 3~Mpps per core, no energy measurement.
+\par
+\endgroup
+
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont Revisiting the Open vSwitch Dataplane Ten Years Later~\cite{tu2021}}
+\finding{DPDK stays ahead of AF\_XDP on physical and VM paths at lower CPU cost, the kernel datapath keeps up only by spending about eight cores through RSS, and AF\_XDP wins container forwarding via XDP redirect.}
+Open vSwitch (OVS) moves from a kernel-module datapath to userspace over AF\_XDP, with DPDK as the performance reference.
+The motivation is maintainability (Section~2), the paper closes with two years of lessons learned (Section~6).
+An eBPF datapath at the \texttt{tc} hook was rejected as 10--20\,\% slower than the kernel module (Figure~2).
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Forwarding rate and CPU use.}
+Maximum lossless rate for 64-byte packets with 1 and 1,000 flows; CPU in hyperthread units split into system, softirq, guest and user (Figure~9, Table~4).
+With vhostuser, AF\_XDP is about 30\,\% slower than DPDK.
+\item \emph{Latency.}
+\texttt{netperf} TCP\_RR P50/P90/P99 (Figures~10 and~11): inter-host DPDK 36/38/45~\textmu s, AF\_XDP 39/41/53, kernel 58/68/94; between containers DPDK 81/136/241 versus about 15/16/20 for kernel and AF\_XDP.
+\item \emph{Scaling and XDP cost.}
+Throughput over 1--6 queues at 25~Gbps (Figure~12).
+Single-core XDP rate falls from 14 to 4.7~Mpps as program complexity grows (Table~5).
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Production rule set.}
+About 103,000 NSX OpenFlow rules with Geneve tunnels and connection tracking, TCP via \texttt{iperf} for VM and container scenarios (Figure~8).
+\item \emph{Raw forwarding.}
+TRex 64-byte traffic through physical-to-physical, physical-VM-physical and physical-container-physical loops.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+OVS 2.14 with swapped I/O backend on one testbed.
+The kernel datapath spreads load over all 16 hyperthreads via RSS, userspace datapaths use pinned PMD threads.
+Virtual device type (tap versus vhostuser) and the missing AF\_XDP checksum offload (estimated) shift results.
+DPDK is absent from the NSX scenario.
+\par
+\endgroup
+
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont Comparative Evaluation of Kernel Bypass Mechanisms for High-performance Inter-container Communications~\cite{ara2020}}
+\finding{Every bypass path beats kernel sockets by over four times, SR-IOV leads throughput and large-burst latency, VPP nearly matches raw DPDK forwarding, and Snabb trails on both throughput and latency.}
+An open-source framework (\texttt{nfv-testperf}) benchmarks virtual switches between LXC containers.
+Compared: Linux bridge with POSIX sockets, the DPDK basic forwarding sample, OVS-DPDK, VPP, Snabb as a learning switch, and SR-IOV with the NIC's embedded switch.
+Benchmark applications poll and use one API over POSIX or DPDK.
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Throughput.}
+Maximum receive rate in Mpps and Gbps versus packet size (Figure~4).
+Kernel sockets reach 0.34--0.44~Mpps, DPDK-based switches at least 2~Mpps (Table~2).
+Burst sizes 32--256 did not change throughput.
+\item \emph{Scalability.}
+Total throughput for 1--8 container pairs on one or two hosts (Figures~4e--4h).
+\item \emph{Latency.}
+Mean round-trip time at low rate versus packet and burst size (Figure~5).
+Only virtio-based switches reach single-digit microseconds locally; Snabb stays above 60~\textmu s.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Sender/receiver pairs.}
+Unidirectional synthetic traffic, 64--1500-byte packets, 1--20~Mpps offered, one-minute runs.
+\item \emph{Client/server pairs.}
+Echoed bursts of 4--128 packets for round-trip latency.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+Two identical hosts (Xeon E5-2640 v4, Intel X710 10~GbE), frequency scaling and hyperthreading off; DPDK 19.05, OVS 2.11, Snabb 2019.01, VPP 19.08.
+Switching logic differs: the DPDK sample does no switching, Snabb's L2 component is its bottleneck, SR-IOV switches in hardware.
+Snabb runs single-host only; CPU cores per switch are not varied.
+\par
+\endgroup
+
+\clearpage
+\begin{thebibliography}{11}
+\footnotesize
+\setlength{\itemsep}{3pt}
+
+\bibitem{gallenmueller2015}
+S.~Gallenmüller et al.
+\emph{Comparison of Frameworks for High-Performance Packet IO}.
+ANCS, 2015.
+\href{https://www.net.in.tum.de/fileadmin/bibtex/publications/papers/gallenmueller_ancs2015.pdf}{PDF}.
+
+\bibitem{mole2025}
+M.~Molè et al.
+\emph{Performance Implications at the Intersection of AF\_XDP and Programmable NICs}.
+eBPF Workshop, 2025.
+\href{https://doi.org/10.1145/3748355.3748359}{DOI}.
+
+\bibitem{xdp2018}
+T.~Høiland-Jørgensen et al.
+\emph{The eXpress Data Path: Fast Programmable Packet Processing in the Operating System Kernel}.
+CoNEXT, 2018.
+\href{https://doi.org/10.1145/3281411.3281443}{DOI}.
+
+\bibitem{freitas2022}
+E.~Freitas et al.
+\emph{A survey on accelerating technologies for fast network packet processing in Linux environments}.
+Computer Communications, 2022.
+\href{https://doi.org/10.1016/j.comcom.2022.10.003}{DOI}.
+
+\bibitem{uxdp2025}
+Y.~Zheng, P.~Gavriil and M.~Kogias.
+\emph{uXDP: Frictionless XDP Deployments in Userspace}.
+eBPF Workshop, 2025.
+\href{https://doi.org/10.1145/3748355.3748360}{DOI}.
+
+\bibitem{metronome2023}
+M.~Faltelli et al.
+\emph{Metronome: Adaptive and Precise Intermittent Packet Retrieval in DPDK}.
+IEEE/ACM Transactions on Networking, 2023 (journal edition).
+\href{https://doi.org/10.1109/TNET.2022.3208799}{DOI}.
+
+\bibitem{middlenet2023}
+S.~Qi et al.
+\emph{MiddleNet: A Unified, High-Performance NFV and Middlebox Framework With eBPF and DPDK}.
+IEEE Transactions on Network and Service Management, 2023.
+\href{https://doi.org/10.1109/TNSM.2023.3256891}{DOI}.
+
+\bibitem{edge2023}
+F.~Parola, R.~Procopio, R.~Querio and F.~Risso.
+\emph{Comparing User Space and In-Kernel Packet Processing for Edge Data Centers}.
+ACM SIGCOMM Computer Communication Review, 2023.
+\href{https://doi.org/10.1145/3594255.3594257}{DOI}.
+
+\bibitem{valia2026}
+S.~Valia, N.~Rajput, A.~Gairola and V.~Rathi.
+\emph{Comparing UPF Dataplane I/O Modes in a Cloud-Native 5G Core: AF\_PACKET, AF\_XDP, CNDP, and DPDK on SD-Core BESS-UPF}.
+arXiv:2608.14589, 2026.
+\href{https://arxiv.org/abs/2608.14589}{arXiv}.
+
+\bibitem{tu2021}
+W.~Tu, Y.-H.~Wei, G.~Antichi and B.~Pfaff.
+\emph{Revisiting the Open vSwitch Dataplane Ten Years Later}.
+SIGCOMM, 2021.
+\href{https://doi.org/10.1145/3452296.3472914}{DOI}.
+
+\bibitem{ara2020}
+G.~Ara, T.~Cucinotta, L.~Abeni and C.~Vitucci.
+\emph{Comparative Evaluation of Kernel Bypass Mechanisms for High-performance Inter-container Communications}.
+CLOSER, 2020.
+\href{https://doi.org/10.5220/0009321200440055}{DOI}.
+
+\end{thebibliography}
+
+\end{document}
