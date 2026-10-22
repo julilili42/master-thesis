@@ -34,13 +34,14 @@ eBPF kernel programs \cite{xdp2018,freitas2022,tu2021}\newline
 \hspace*{1em}XDP (native/generic) \cite{xdp2018,tu2021}\newline
 \hspace*{1em}SK\_MSG \cite{middlenet2023}\newline
 Linux network stack \cite{xdp2018,tu2021,ara2020}\newline
-\hspace*{1em}AF\_PACKET sockets \cite{valia2026}
+\hspace*{1em}AF\_PACKET, PACKET\_MMAP \cite{valia2026,packetio2026,abtrda3}
 &
-DPDK \cite{gallenmueller2015,metronome2023,valia2026,tu2021,ara2020}\newline
+DPDK \cite{gallenmueller2015,metronome2023,valia2026,tu2021,ara2020,packetio2026,abtrda3}\newline
 Snabb \cite{ara2020}\newline
 PF\_RING ZC \cite{gallenmueller2015}\newline
 netmap \cite{gallenmueller2015}\newline
-AF\_XDP \cite{mole2025,edge2023,valia2026,tu2021}\newline
+AF\_XDP \cite{mole2025,edge2023,valia2026,tu2021,packetio2026,abtrda3}\newline
+NIC-vendor bypass (mlx5 Direct Verbs, ef\_vi) \cite{packetio2026,abtrda3}\newline
 uXDP over DPDK/AF\_XDP \cite{uxdp2025}\newline
 VPP over DPDK \cite{ara2020} \\
 \bottomrule
@@ -106,7 +107,7 @@ Throughput, CPU by execution context, LLC hits/misses &
 40-Gbit testbed, usually one core. 10 runs (mean/SD). Drop/transit loss below 0.1\%. \\
 
 UPF I/O modes (2026) \cite{valia2026} &
-AF\_PACKET, AF\_XDP zero-copy, CNDP, DPDK PMD as port drivers of one BESS-UPF &
+AF\_PACKET, AF\_XDP zero-copy, CNDP, DPDK PMD as BESS ports behind \texttt{RecvPackets} and \texttt{SendPackets} &
 5G UPF pipeline (GTP-U, PDR/FAR/QER), 64--1518~B, 1--8 workers, 24-h soak &
 Non-drop rate (RFC~2544), in-pipeline latency percentiles, per-core rate, worker scaling &
 Same host, NIC, kernel and UPF image, only the port driver changes. Different generators per mode. AF\_XDP/CNDP capped at two workers. \\
@@ -122,6 +123,18 @@ Linux bridge/sockets, DPDK basicfwd, OVS-DPDK, VPP, Snabb, SR-IOV &
 Container pairs on one or two hosts, 64--1500~B, bursts 4--256, 1--8 pairs &
 Max receive rate, total throughput vs.\ pairs, mean round-trip latency &
 Same hosts and benchmark apps (\texttt{nfv-testperf}), polling, fixed CPU clock. Switching logic differs per switch. \\
+
+packetio (2026) \cite{packetio2026} &
+AF\_PACKET, AF\_XDP, DPDK, mlx5 Direct Verbs behind one Go API &
+Transmit, receive, L3 LPM forward, 64~B at 100~G &
+Mpps per core, cores to line rate incl.\ softirq, median RTT (mlx5 only) &
+Same sweep program, backend by build tag. No XDP, no partial load, no energy. \\
+
+ABTRDA3 (2026) \cite{abtrda3} &
+ef\_vi, DPDK, AF\_XDP, verbs, PACKET\_MMAP behind C++20 ring concepts &
+MAC-swap reflector, one frame in flight, 24-h soak &
+RTT median to P99.999 &
+Same loop, transport by config file. Latency only. \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -523,10 +536,22 @@ Results depend on traffic class, memory demand and driver scheduling mode.
 \begingroup
 \small
 \section*{\large\normalfont Comparing UPF Dataplane I/O Modes in a Cloud-Native 5G Core: AF\_PACKET, AF\_XDP, CNDP, and DPDK on SD-Core BESS-UPF~\cite{valia2026}}
-\finding{At two workers AF\_XDP, CNDP and DPDK are within measurement noise and AF\_XDP leads per core, DPDK's lead is a scaling-ceiling effect, and AF\_PACKET is an order of magnitude slower.}
-One open-source 5G user plane function (SD-Core BESS-UPF) runs under four I/O modes.
-Only the BESS port driver changes: AF\_PACKET and AF\_XDP through DPDK poll-mode drivers, CNDP through its own port type, DPDK through a native PMD over \texttt{vfio-pci}.
-Deployment requirements, operational pitfalls and a decision guide are reported next to the measurements (Sections~3, 7 and~9).
+\finding{One UPF pipeline, four I/O backends behind the same BESS port primitives: at two workers AF\_XDP, CNDP and DPDK are within measurement noise and AF\_XDP leads per core, DPDK's lead is a scaling-ceiling effect, and AF\_PACKET is an order of magnitude slower.}
+Earlier work compares I/O modes in pairs, most often AF\_XDP against DPDK, or with synthetic generators, so UPF operators have to combine results from different testbeds and applications before they can decide.
+Here one open-source 5G user plane function (SD-Core BESS-UPF) runs under four I/O modes and only the port from which packets are received changes, so the I/O backend is the only variable.
+Measured are throughput, latency, CPU use and stability; deployment requirements, operational pitfalls and a decision guide are reported next to the measurements (Sections~3, 7 and~9).
+
+\subsection*{\normalsize\normalfont Port abstraction}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{BESS port as black box.}
+The Berkeley Extensible Software Switch hides the port from the userspace pipeline: the UPF only calls \texttt{RecvPackets} and \texttt{SendPackets} on packet batches.
+A configuration file selects driver (for example the DPDK poll-mode driver), ring and kernel involvement; all of it stays invisible to the UPF code.
+\item \emph{Four modes.}
+AF\_PACKET and AF\_XDP through DPDK poll-mode drivers, CNDP through its own port type, DPDK through a native PMD over \texttt{vfio-pci}.
+\item \emph{CNDP.}
+A userspace abstraction on top of AF\_XDP with a DPDK-like programming model (mempools, ports) but without DPDK's hugepage and VFIO requirements.
+\end{itemize}
 
 \subsection*{\normalsize\normalfont Metrics}
 \begin{itemize}
@@ -553,7 +578,8 @@ GTP-U decapsulation, PDR lookup, QER metering and FAR action with a single rule 
 
 \subsection*{\normalsize\normalfont Comparison basis}
 Same host, NIC (Intel XXV710), real-time kernel, Kubernetes cluster and UPF image; the port driver is the only variable (Table~2).
-Caveats: a different load generator per mode, traffic hairpinned inside the NIC because of 1-GbE optics, a NIC receive path that caps every mode near 3~Mpps per core, no energy measurement.
+Caveats: a different load generator per mode, traffic hairpinned inside the NIC because of 1-GbE optics, a NIC receive path that caps every mode near 3~Mpps per core, no energy measurement, no in-kernel XDP path.
+BESS adds its own scheduler and module pipeline above the port, so the measured path is BESS plus port, not the port alone.
 \par
 \endgroup
 
@@ -635,8 +661,36 @@ Snabb runs single-host only; CPU cores per switch are not varied.
 \par
 \endgroup
 
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont Userspace I/O abstractions: packetio and ABTRDA3~\cite{packetio2026,abtrda3}}
+\finding{Both expose one API over several ways to reach the NIC, so a generic userspace I/O interface is state of practice; the frame idea goes further by including the in-kernel path, which leaves the overlap large for DPDK and AF\_XDP and nil for XDP and Snabb.}
+Two open-source projects from 2026 without peer review.
+\emph{packetio} (Go) hides as much setup complexity as possible behind one API that exposes AF\_PACKET, AF\_XDP, DPDK and mlx5 Direct Verbs; the same sweep program (transmit, receive, L3 forward) runs on all four backends.
+\emph{ABTRDA3} (C++20) follows the same concept because every kernel-bypass framework has a different setup ritual: the transport is a template parameter behind \texttt{TxRing}/\texttt{RxRing} concepts, chosen in a TOML file, over ef\_vi, DPDK, AF\_XDP, verbs and PACKET\_MMAP.
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{packetio.}
+Mpps at one core and cores to line rate on an AMD EPYC 9275F with a ConnectX-6 Dx at 100~G, 64-byte frames, measured September 2026: forwarding per core mlx5 29.3, DPDK 22.6, AF\_XDP 17.5 (two cores); AF\_PACKET collapses under load.
+Cores are counted machine-wide including softirq work.
+Latency only as medians on mlx5.
+\item \emph{ABTRDA3.}
+24-hour loopback RTT percentiles up to P99.999 on X2522, ConnectX-4~Lx and XXV710 (ef\_vi 1.87, verbs 2.43, DPDK 3.51~\textmu s median).
+No throughput, CPU or energy.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+Same program per project, backend swapped by build tag or configuration file.
+No in-kernel XDP, no Snabb, no empty-frame calibration, no partial-load sweep, no energy.
+Design references for the frame interface (opaque packet handle, backend by configuration, CPU including kernel work), not measurement studies.
+\par
+\endgroup
+
 \clearpage
-\begin{thebibliography}{11}
+\begin{thebibliography}{13}
 \footnotesize
 \setlength{\itemsep}{3pt}
 
@@ -705,6 +759,18 @@ G.~Ara, T.~Cucinotta, L.~Abeni and C.~Vitucci.
 \emph{Comparative Evaluation of Kernel Bypass Mechanisms for High-performance Inter-container Communications}.
 CLOSER, 2020.
 \href{https://doi.org/10.5220/0009321200440055}{DOI}.
+
+\bibitem{packetio2026}
+A.~Toonk.
+\emph{packetio: one API over four ways to reach the NIC}.
+GitHub repository and blog, 2026.
+\href{https://github.com/atoonk/packetio}{Code}, \href{https://toonk.io/packetio/}{Blog}.
+
+\bibitem{abtrda3}
+A.~Sherjil.
+\emph{ABTRDA3: C++20 kernel-bypass networking library with 24-hour tail-latency benchmarks}.
+GitHub repository, 2026.
+\href{https://github.com/ASherjil/ABTRDA3}{Code}.
 
 \end{thebibliography}
 
