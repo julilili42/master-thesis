@@ -1,0 +1,327 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+\usepackage[margin=18mm]{geometry}
+\usepackage{booktabs,tabularx,array}
+\usepackage[hidelinks]{hyperref}
+
+\setlength{\parindent}{0pt}
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.15}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\newcommand{\finding}[1]{\textbf{#1}\par\smallskip}
+% Trenner zwischen Papern. Umbruch vorziehen, wenn weniger als zehn Zeilen frei sind (needspace-Trick ohne Paket).
+% Linie, Abstand und Titel bleiben zusammen: \@nobreaktrue lässt \section* keinen eigenen Umbruchpunkt setzen.
+% Die Linie ist Leaders-Glue, damit sie am Seitenanfang wegfällt und nur zwischen zwei Papern auf einer Seite erscheint.
+\makeatletter
+\newcommand{\papersep}{\par\vskip\z@\@plus 10\baselineskip\penalty-100\vskip\z@\@plus -10\baselineskip
+  \vspace{4ex}\leaders\hrule height 0.4pt\vskip 0.4pt\nobreak\vspace{3.5ex}\@nobreaktrue}
+\makeatother
+
+\begin{document}
+
+% Layout inspired by Downloads/IMG_0500.HEIC.
+\begin{table}[!t]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}LL@{}}
+\toprule
+\textbf{In-kernel} & \textbf{Kernel bypass / userspace} \\
+\midrule
+eBPF kernel programs \cite{uxdp2025}\newline
+\hspace*{1em}XDP (native/generic) \cite{uxdp2025}\newline
+Linux network stack (TCP/IP) \cite{okmoon2026}\newline
+\hspace*{1em}AF\_PACKET, PACKET\_MMAP \cite{valia2026,packetio2026,abtrda3}
+&
+DPDK \cite{valia2026,uxdp2025,packetio2026,abtrda3}\newline
+AF\_XDP \cite{valia2026,uxdp2025,packetio2026,abtrda3}\newline
+CNDP over AF\_XDP \cite{valia2026}\newline
+NIC-vendor bypass (mlx5 Direct Verbs, verbs, ef\_vi) \cite{packetio2026,abtrda3}\newline
+RoCEv2 RDMA, NIC-offloaded \cite{okmoon2026}\newline
+uXDP over DPDK/AF\_XDP \cite{uxdp2025} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{table}[!t]
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.05}
+% Spaltenbreiten: Paper schmal, Comparison basis breit, Summe der Faktoren bleibt 5.
+\begin{tabularx}{\textwidth}{@{}>{\hsize=.7\hsize}L>{\hsize=1.0\hsize}L>{\hsize=1.05\hsize}L>{\hsize=.95\hsize}L>{\hsize=1.3\hsize}L@{}}
+\toprule
+\textbf{Paper} & \textbf{Approaches} & \textbf{Workload} &
+\textbf{Metrics} & \textbf{Comparison basis} \\
+\midrule
+UPF I/O modes (2026) \cite{valia2026} &
+AF\_PACKET, AF\_XDP zero-copy, CNDP, DPDK PMD as BESS ports behind \texttt{RecvPackets} and \texttt{SendPackets} &
+5G UPF pipeline (GTP-U, PDR/FAR/QER), 64--1518~B, 1--8 workers, 24-h soak &
+Non-drop rate (RFC~2544), in-pipeline latency percentiles, per-core rate, worker scaling &
+Same host, NIC, kernel and UPF image, only the port driver changes. Different generators per mode. AF\_XDP/CNDP capped at two workers. \\
+
+uXDP (2025) \cite{uxdp2025} &
+Native/generic XDP, userspace eBPF via DPDK/AF\_XDP &
+Counters, filtering, load balancing, Katran, MAC-swap echo (\texttt{xdp\_tx}) &
+NF throughput, unloaded RTT, compiler/inlining effects &
+Same programs/hardware, one core. Mode comparison: optimised source LLVM IR. \\
+
+packetio (2026) \cite{packetio2026} &
+AF\_PACKET, AF\_XDP, DPDK, mlx5 Direct Verbs behind one Go API &
+Transmit, receive, L3 LPM forward, 64~B at 100~G &
+Mpps per core, cores to line rate incl.\ softirq, median RTT (mlx5 only) &
+Same sweep program, backend by build tag. No XDP, no partial load, no energy. \\
+
+ABTRDA3 (2026) \cite{abtrda3} &
+ef\_vi, DPDK, AF\_XDP, verbs, PACKET\_MMAP behind C++20 ring concepts &
+MAC-swap reflector, one frame in flight, 24-h soak &
+RTT median to P99.999 &
+Same loop, transport by config file. Latency only. \\
+
+Fast but Wasteful (2026) \cite{okmoon2026} &
+Linux TCP/IP stack, RoCEv2 RDMA; core governors and fixed uncore frequency as variables &
+\texttt{iperf3} TCP flows, Valkey key-value store under YCSB, \texttt{perftest} RDMA flows, 100~G &
+Throughput per utilised core, KRPS vs.\ P50/P99 latency, active wall power (\texttt{ipmitool}), core/uncore frequency (PCM) &
+Same two servers, only governor and uncore frequency change. No packet framework compared, NIC power not reported. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\null % Keep both tables at the top instead of centring them on a float-only page.
+\clearpage
+
+\begingroup
+\small
+\section*{\large\normalfont Comparing UPF Dataplane I/O Modes in a Cloud-Native 5G Core: AF\_PACKET, AF\_XDP, CNDP, and DPDK on SD-Core BESS-UPF~\cite{valia2026}}
+\finding{One UPF pipeline, four I/O backends behind the same BESS port primitives: at two workers AF\_XDP, CNDP and DPDK are within measurement noise and AF\_XDP leads per core, DPDK's lead is a scaling-ceiling effect, and AF\_PACKET is an order of magnitude slower.}
+Earlier work compares I/O modes in pairs, most often AF\_XDP against DPDK, or with synthetic generators, so UPF operators have to combine results from different testbeds and applications before they can decide.
+Here one open-source 5G user plane function (SD-Core BESS-UPF) runs under four I/O modes and only the port from which packets are received changes, so the I/O backend is the only variable.
+Measured are throughput, latency, CPU use and stability; deployment requirements, operational pitfalls and a decision guide are reported next to the measurements (Sections~3, 7 and~9).
+
+\subsection*{\normalsize\normalfont Port abstraction}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{BESS port as black box.}
+The Berkeley Extensible Software Switch hides the port from the userspace pipeline: the UPF only calls \texttt{RecvPackets} and \texttt{SendPackets} on packet batches.
+A configuration file selects driver (for example the DPDK poll-mode driver), ring and kernel involvement; all of it stays invisible to the UPF code.
+\item \emph{Four modes.}
+AF\_PACKET and AF\_XDP through DPDK poll-mode drivers, CNDP through its own port type, DPDK through a native PMD over \texttt{vfio-pci}.
+\item \emph{CNDP.}
+A userspace abstraction on top of AF\_XDP with a DPDK-like programming model (mempools, ports) but without DPDK's hugepage and VFIO requirements.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Throughput.}
+Non-drop rate per RFC~2544 over 64--1518~B (Figure~18, Tables~3 and~4).
+At 64~B: CNDP 5.52 and AF\_XDP 6.47~Mpps with two workers, DPDK 10.30~Mpps with four and 13.09~Mpps with eight; AF\_PACKET 0.25~Mpps at 86~B.
+\item \emph{Latency and jitter.}
+In-pipeline probes give mean, P50, P99 and P99.9 (Table~5): DPDK 8.1~\textmu s mean, CNDP and AF\_XDP 13--14~\textmu s.
+A second AF\_XDP worker adds P99 jitter through contention on the kernel redirect path (Table~6).
+\item \emph{CPU and core scaling.}
+Per-core rate and scaling efficiency (Table~7): AF\_XDP 3.69, DPDK 2.99, CNDP 2.65~Mpps per core.
+A per-netdev AF\_XDP socket limit pins CNDP and AF\_XDP at two workers.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{UPF pipeline.}
+GTP-U decapsulation, PDR lookup, QER metering and FAR action with a single rule set.
+\item \emph{Synthetic and real traffic.}
+\texttt{testpmd} and kernel \texttt{pktgen} for I/O ceilings; a 24-hour soak and a real-RAN run validate CNDP only.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+Same host, NIC (Intel XXV710), real-time kernel, Kubernetes cluster and UPF image; the port driver is the only variable (Table~2).
+Caveats: a different load generator per mode, traffic hairpinned inside the NIC because of 1-GbE optics, a NIC receive path that caps every mode near 3~Mpps per core, no energy measurement, no in-kernel XDP path.
+BESS adds its own scheduler and module pipeline above the port, so the measured path is BESS plus port, not the port alone.
+\par
+\endgroup
+
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont uXDP: Frictionless XDP Deployments in Userspace~\cite{uxdp2025}}
+\finding{DPDK-mode uXDP is fastest, up to $3.3\times$ in-kernel XDP, but the figures mix I/O-path and compiler effects.}
+uXDP runs unchanged XDP/eBPF programs in userspace via DPDK or AF\_XDP.
+It extends \texttt{bpftime}, retaining eBPF verification and existing control-plane compatibility.
+Optimisations: helper/map inlining and SIMD instructions.
+DPDK mode avoids interrupt-based retrieval and enables execution where kernel eBPF is unavailable.
+
+\subsection*{\normalsize\normalfont Deployment modes}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{DPDK mode.}
+Userspace RX/TX rings and packet processing bypass the kernel network stack.
+Kernel-bound traffic requires reinjection.
+\item \emph{AF\_XDP mode.}
+Kernel XDP redirects packets to an AF\_XDP socket for userspace eBPF processing.
+Shared RX/TX rings and packet buffers avoid per-packet copies in zero-copy mode.
+\end{itemize}
+
+In AF\_XDP mode, kernel XDP can pass selected packets directly to the Linux stack before userspace processing.
+After uXDP processing, the evaluated version supports only \texttt{XDP\_DROP} and \texttt{XDP\_TX}.
+Kernel reinjection for \texttt{XDP\_PASS} is future work (Section~7).
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Throughput across deployment modes.}
+Modes in Figure~4: DPDK (\texttt{dpdk\_llvm}), AF\_XDP (\texttt{afxdp\_llvm}), native XDP (\texttt{drv\_mode}), generic XDP (\texttt{skb\_mode}).
+Up to $3.3\times$ throughput over in-kernel execution and up to 40\% higher throughput for Meta's Katran.
+DPDK mode is fastest across tested functions.
+AF\_XDP mode can exceed native XDP for complex functions.
+Generic XDP is slowest.
+
+\item \emph{Unloaded round-trip latency.}
+\texttt{xdp\_tx} MAC-swap RTT (Figure~5): DPDK mode has the lowest latency, AF\_XDP mode slightly higher latency than native XDP.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{XDP network functions.}
+Packet counters, packet-length statistics, filtering, simple load balancing and Katran, with different helper/map combinations.
+\item \emph{MAC swap and transmit.}
+\texttt{xdp\_tx}: swap source/destination MAC addresses and transmit back (latency benchmark).
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+Same programs and testbed, one CPU core.
+64-byte TCP or 128-byte ICMP packets.
+Existing eBPF binaries run without recompilation.
+Figure~4 uses optimised source LLVM IR: results combine deployment-mode and compiler effects.
+\par
+\endgroup
+
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont Userspace I/O abstractions: packetio and ABTRDA3~\cite{packetio2026,abtrda3}}
+\finding{Both expose one API over several ways to reach the NIC, so a generic userspace I/O interface is state of practice; the frame idea goes further by including the in-kernel path, which leaves the overlap large for DPDK and AF\_XDP and nil for XDP and Snabb.}
+Two open-source projects from 2026 without peer review.
+\emph{packetio} (Go) hides as much setup complexity as possible behind one API that exposes AF\_PACKET, AF\_XDP, DPDK and mlx5 Direct Verbs; the same sweep program (transmit, receive, L3 forward) runs on all four backends.
+\emph{ABTRDA3} (C++20) follows the same concept because every kernel-bypass framework has a different setup ritual: the transport is a template parameter behind \texttt{TxRing}/\texttt{RxRing} concepts, chosen in a TOML file, over ef\_vi, DPDK, AF\_XDP, verbs and PACKET\_MMAP.
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{packetio.}
+Mpps at one core and cores to line rate on an AMD EPYC 9275F with a ConnectX-6 Dx at 100~G, 64-byte frames, measured September 2026: forwarding per core mlx5 29.3, DPDK 22.6, AF\_XDP 17.5 (two cores); AF\_PACKET collapses under load.
+Cores are counted machine-wide including softirq work.
+Latency only as medians on mlx5.
+\item \emph{ABTRDA3.}
+24-hour loopback RTT percentiles up to P99.999 on X2522, ConnectX-4~Lx and XXV710 (ef\_vi 1.87, verbs 2.43, DPDK 3.51~\textmu s median).
+No throughput, CPU or energy.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+Same program per project, backend swapped by build tag or configuration file.
+No in-kernel XDP, no Snabb, no empty-frame calibration, no partial-load sweep, no energy.
+Design references for the frame interface (opaque packet handle, backend by configuration, CPU including kernel work), not measurement studies.
+\par
+\endgroup
+
+\papersep
+\begingroup
+\small
+\section*{\large\normalfont Fast but Wasteful: Power Analysis and Implications of Host Networking~\cite{okmoon2026}}
+\finding{Network-intensive load drives the CPU uncore to near-maximum frequency and the uncore never idles, so capping it at 1.6~GHz saves 43--46\,\% power for 11--12\,\% less key-value throughput, while \texttt{schedutil} and \texttt{conservative} under-clock IRQ cores.}
+Measurement study of CPU frequency scaling, core and uncore, on host networking performance and power for the Linux TCP/IP stack and RoCEv2 RDMA.
+More than one core is needed to saturate a 100-Gbps link, so DVFS decisions on these cores shape the energy footprint.
+The uncore (last-level cache, memory controllers, interconnect) is scaled by hardware and firmware with undisclosed logic; the study fixes it by setting equal lower and upper bounds.
+No packet-processing framework is compared: no XDP, DPDK or AF\_XDP.
+
+\subsection*{\normalsize\normalfont Power measurement method}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Wall power.}
+\texttt{ipmitool} reads system power once per second.
+Reported is active power: wall power under load minus idle power at the lowest core and uncore frequency without workload, which removes temperature and other environment effects.
+\item \emph{Breakdown.}
+Intel PCM logs core utilisation, core and uncore frequency, and CPU and DRAM power from RAPL, which excludes fans and NIC.
+Uncore power cannot be read directly and is projected from an idle sweep over uncore frequency (Figure~1).
+\item \emph{NIC power.}
+Not reported: the ConnectX-6~Dx exposes no power counter, its active power is estimated at under 8~W.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Metrics}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{Uncore frequency and power.}
+Twelve pinned \texttt{iperf3} TCP flows push the NIC-local uncore to 2.49 of 2.5~GHz; even the unused NIC-remote socket rises above 2~GHz (Table~2).
+Uncore accounts for 74\,\% of sender and 61\,\% of receiver active power (Figure~3).
+Fixed at 1.6~GHz, throughput per core drops 2--7\,\% and power 45--55\,\%; at 0.8~GHz 13--27\,\% versus 67--82\,\% (Figure~2).
+CPU- and memory-intensive \texttt{stress-ng} loads leave the uncore at 0.8--1.3~GHz; only networking drives it to the maximum, plausibly through Direct Cache Access (Figure~4).
+\item \emph{Core governors.}
+\texttt{ondemand} delivers 61\,\% more throughput per core than \texttt{schedutil} at default uncore for equal power (Figure~2).
+Boosting IRQ cores to 1.6~GHz under \texttt{schedutil} gains 24\,\% throughput per core for under 2.7~W (Figure~5).
+\item \emph{Key-value store.}
+Valkey with 256~B and 4~KB records, 99\,\% reads: uncore at 1.6~GHz saves 43.3--46.1\,\% power for 10.9--11.6\,\% maximum throughput (Figures~6 and~8).
+At low load, 0.8~GHz matches P50 and P99 latency up to 100~KRPS with 77--84\,\% less power; the uncore capacity needed for a latency target depends on load, which the default setting ignores.
+\item \emph{RDMA.}
+Requester cores busy-poll at full utilisation and maximum frequency, so governors have no effect.
+Responder power follows the uncore, which bandwidth-intensive flows raise above about 51--53~Gbps while message-intensive flows at 55~Mmps do not (Figures~10 and~11).
+Uncore at 0.8~GHz adds at most 0.6~\textmu s message latency (Figure~9); RDMA-based Valkey loses 23.8\,\% throughput for 72\,\% less power (Table~3).
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Workload}
+\begin{itemize}
+\setlength{\itemsep}{2pt}
+\item \emph{TCP.}
+\texttt{iperf3}, one flow and one IRQ thread per core, twelve flows on 24 of 28 cores, 60~s, NIC-local socket only.
+The link is the bottleneck, so aggregate throughput divided by total core utilisation is the metric.
+\item \emph{Key-value store.}
+Valkey server under YCSB load sweeps, Zipfian and uniform keys, 24 client processes with ten threads each; RDMA variant with 1~MB SET values.
+\item \emph{RDMA.}
+\texttt{perftest} WRITE and READ, bandwidth-intensive (1~MB messages) and message-intensive (32-batch of 16~B), 1--24 flows, one core per flow.
+\end{itemize}
+
+\subsection*{\normalsize\normalfont Comparison basis}
+Two identical servers, $2\times$ Xeon Gold 5520+ (core 0.8--2.0~GHz, uncore 0.8--2.5~GHz), ConnectX-6~Dx at 100~G back to back, Ubuntu 24.04, Turbo Boost and Hyperthreading off (Table~1).
+Variables are the governor (\texttt{schedutil}, \texttt{ondemand}, \texttt{conservative}) and the fixed uncore frequency; workload and stack stay constant.
+For the thesis: template for the energy measurement (wall power minus idle, 1-s sampling, RAPL for the breakdown) and the two tuning profiles, since an untouched system sets uncore frequency and governor differently per load.
+\par
+\endgroup
+
+\clearpage
+\begin{thebibliography}{5}
+\footnotesize
+\setlength{\itemsep}{3pt}
+
+\bibitem{valia2026}
+S.~Valia, N.~Rajput, A.~Gairola and V.~Rathi.
+\emph{Comparing UPF Dataplane I/O Modes in a Cloud-Native 5G Core: AF\_PACKET, AF\_XDP, CNDP, and DPDK on SD-Core BESS-UPF}.
+arXiv:2608.14589, 2026.
+\href{https://arxiv.org/abs/2608.14589}{arXiv}.
+
+\bibitem{uxdp2025}
+Y.~Zheng, P.~Gavriil and M.~Kogias.
+\emph{uXDP: Frictionless XDP Deployments in Userspace}.
+eBPF Workshop, 2025.
+\href{https://doi.org/10.1145/3748355.3748360}{DOI}.
+
+\bibitem{packetio2026}
+A.~Toonk.
+\emph{packetio: one API over four ways to reach the NIC}.
+GitHub repository and blog, 2026.
+\href{https://github.com/atoonk/packetio}{Code}, \href{https://toonk.io/packetio/}{Blog}.
+
+\bibitem{abtrda3}
+A.~Sherjil.
+\emph{ABTRDA3: C++20 kernel-bypass networking library with 24-hour tail-latency benchmarks}.
+GitHub repository, 2026.
+\href{https://github.com/ASherjil/ABTRDA3}{Code}.
+
+\bibitem{okmoon2026}
+J.~Ok and S.~Moon.
+\emph{Fast but Wasteful: Power Analysis and Implications of Host Networking}.
+Proceedings of the ACM on Networking (CoNEXT), 2026.
+\href{https://doi.org/10.1145/3786287}{DOI}.
+
+\end{thebibliography}
+
+\end{document}

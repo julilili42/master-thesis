@@ -1,0 +1,85 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+\usepackage[landscape,margin=15mm]{geometry}
+\usepackage{booktabs,array,graphicx,amssymb}
+\usepackage[hidelinks]{hyperref}
+
+\setlength{\parindent}{0pt}
+\setlength{\tabcolsep}{3.5pt}
+\renewcommand{\arraystretch}{1.4}
+% booktabs-Abstände auf 0, sonst haben die senkrechten Linien an jeder Regel eine Lücke.
+\setlength{\aboverulesep}{0pt}
+\setlength{\belowrulesep}{0pt}
+\newcolumntype{C}{>{\centering\arraybackslash}m{4.5mm}}
+\newcolumntype{P}[1]{>{\raggedright\arraybackslash}m{#1}}
+\newcommand{\rot}[1]{\rotatebox{90}{#1}}
+\newcommand{\y}{\checkmark}
+
+\begin{document}
+
+{\large Related work matrix}
+\vspace{2ex}
+
+\footnotesize
+\begin{tabular}{@{}P{30mm}|CCCCCP{22mm}|CCCCCP{24mm}|CCCCCC|P{17mm}C@{}}
+\toprule
+& \multicolumn{6}{c|}{\textbf{Frameworks}} & \multicolumn{6}{c|}{\textbf{Use cases}} & \multicolumn{6}{c|}{\textbf{Metrics}} & & \\
+\textbf{Paper} &
+\rot{XDP} & \rot{AF\_XDP} & \rot{DPDK} & \rot{Snabb} & \rot{Linux stack} & Other &
+\rot{Drop} & \rot{L2FWD} & \rot{L3FWD} & \rot{Encap/Decap} & \rot{SFC} & Other &
+\rot{Throughput} & \rot{Latency} & \rot{Jitter} & \rot{CPU} & \rot{Memory/cache} & \rot{Power} &
+\textbf{Link rate} & \rot{Same code} \\
+\midrule
+Gallenmüller et al.\ (2015)~\cite{gallenmueller2015} &
+ & & \y & & & netmap, PF\_RING ZC &
+ & \y & & & & emulated CPU load, random memory access &
+\y & \y & & \y & \y & &
+10G & \\
+\midrule
+Høiland-Jørgensen et al.\ (2018)~\cite{xdp2018} &
+\y & & \y & & \y & IPVS &
+\y & \y & \y & \y & & DoS filter, L4 load balancing &
+\y & \y & & \y & & &
+100G\textsuperscript{c} & \\
+\midrule
+Hohlfeld et al.\ (2019)~\cite{hohlfeld2019} &
+\y & \y\textsuperscript{a} & & & & SmartNIC offload (XDP) &
+\y & & & & & emulated CPU load, DNS responder, map lookup/update &
+\y & \y & & \y & & &
+10G & \y\textsuperscript{b} \\
+\bottomrule
+\end{tabular}
+
+\vspace{1.5ex}
+\scriptsize
+% Als Tabelle, damit alle Zeilen trotz Hochstellung gleich hoch sind.
+{\renewcommand{\arraystretch}{1.2}%
+\begin{tabular}{@{}l@{~}l@{}}
+\multicolumn{2}{@{}l}{\y~measured \quad empty = not covered} \\
+\textsuperscript{a} & Generic (copy) mode only, the NIC driver had no driver-specific AF\_XDP mode on Linux 4.18. \\
+\textsuperscript{b} & Same XDP program at all three execution points. \\
+\textsuperscript{c} & At 64\,B limited by PCIe: 115\,Mpps drop, 70\,Mpps forwarding out the same NIC. \\
+\end{tabular}}
+
+\begin{thebibliography}{3}
+\scriptsize
+\bibitem{gallenmueller2015}
+S.~Gallenmüller, P.~Emmerich, F.~Wohlfart, D.~Raumer and G.~Carle.
+\emph{Comparison of Frameworks for High-Performance Packet IO}. ANCS, 2015.
+\url{https://ieeexplore.ieee.org/document/7110118}
+
+\bibitem{xdp2018}
+T.~Høiland-Jørgensen, J.~D.~Brouer, D.~Borkmann, J.~Fastabend, T.~Herbert, D.~Ahern and D.~Miller.
+\emph{The eXpress Data Path: Fast Programmable Packet Processing in the Operating System Kernel}. CoNEXT, 2018.
+\url{https://dl.acm.org/doi/10.1145/3281411.3281443}
+
+\bibitem{hohlfeld2019}
+O.~Hohlfeld, J.~Krude, J.~H.~Reelfs, J.~Rüth and K.~Wehrle.
+\emph{Demystifying the Performance of XDP BPF}. NetSoft, 2019.
+\url{https://ieeexplore.ieee.org/document/8806651}
+\end{thebibliography}
+
+\end{document}
